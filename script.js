@@ -1,0 +1,367 @@
+// Ensure DOM is fully loaded before running script
+document.addEventListener("DOMContentLoaded", function () {
+
+    // 0. Scroll reveal (fade up)
+    (function initReveal() {
+        const root = document.documentElement;
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (reduce || !('IntersectionObserver' in window)) { root.classList.remove('js'); return; }
+
+        // [selector, stagger step in seconds, max steps]
+        const groups = [
+            ['.hero-content > *', 0.15, 8],
+            ['.story-container > h2', 0, 0],
+            ['.story-box', 0.08, 3],
+            ['.timeline-header', 0, 0],
+            ['.timeline-item', 0.05, 2],
+            ['#entourage .section-title', 0, 0],
+            ['.attire-palette', 0, 0],
+            ['.attire-card', 0.1, 1],
+            ['.attire-note', 0, 0],
+            ['.moments-grid', 0, 0],
+            ['.entourage-row', 0, 0],
+            ['.gold-divider-line', 0, 0],
+            ['.tables-grid .table-card', 0.06, 4],
+            ['.gallery-container .section-title', 0, 0],
+            ['.gallery-slider', 0.1, 1],
+            ['.rsvp-card', 0, 0],
+            ['.section-divider', 0, 0]
+        ];
+
+        const targets = [];
+        groups.forEach(([sel, step, max]) => {
+            document.querySelectorAll(sel).forEach((el, i) => {
+                el.classList.add('reveal');
+                if (step) el.style.setProperty('--d', (Math.min(i, max) * step).toFixed(2) + 's');
+                targets.push(el);
+            });
+        });
+
+        const io = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('is-visible');
+                    io.unobserve(entry.target);   // animate once
+                }
+            });
+        }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+
+        targets.forEach(el => io.observe(el));
+        root.classList.add('reveal-ready');
+    })();
+
+    // 1. Countdown Timer Implementation
+    const weddingDate = new Date("2027-06-12T00:00:00").getTime();
+
+    function updateCountdown() {
+        const now = new Date().getTime();
+        const distance = weddingDate - now;
+
+        if (isNaN(distance) || distance <= 0) {
+            setElementText(["days", "day"], "00");
+            setElementText(["hours", "hour"], "00");
+            setElementText(["minutes", "mins", "min"], "00");
+            setElementText(["seconds", "secs", "sec"], "00");
+            return;
+        }
+
+        const days = Math.floor(distance / (1000 * 60 * 60 * 24));
+        const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+        const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+
+        // Flexible update that checks both 'mins' / 'minutes' and 'secs' / 'seconds'
+        setElementText(["days", "day"], String(days).padStart(2, '0'));
+        setElementText(["hours", "hour"], String(hours).padStart(2, '0'));
+        setElementText(["minutes", "mins", "min"], String(minutes).padStart(2, '0'));
+        setElementText(["seconds", "secs", "sec"], String(seconds).padStart(2, '0'));
+    }
+
+    // Helper function to dynamically match your HTML IDs
+    function setElementText(possibleIds, value) {
+        for (let id of possibleIds) {
+            let el = document.getElementById(id);
+            if (el) {
+                el.innerText = value;
+                break;
+            }
+        }
+    }
+
+    updateCountdown();
+    setInterval(updateCountdown, 1000);
+
+    // 2. RSVP Form
+    const form = document.getElementById('rsvpForm');
+    const successBox = document.getElementById('rsvpSuccess');
+
+    if (form) {
+        const guestsField = document.getElementById('guestsField');
+        const guestInput = document.getElementById('guestCount');
+        const errorBox = document.getElementById('rsvpError');
+        const submitBtn = form.querySelector('.rsvp-submit');
+        const nameInput = document.getElementById('rsvpName');
+        const choices = form.querySelector('.rsvp-choices');
+
+        const showError = (msg) => { errorBox.textContent = msg; errorBox.hidden = false; };
+        const clearError = () => { errorBox.hidden = true; };
+
+        // Show the guest counter only when attending
+        form.querySelectorAll('input[name="attendance"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const attending = form.querySelector('input[name="attendance"]:checked').value === 'Joyfully Accepts';
+                guestsField.hidden = !attending;
+                guestInput.disabled = !attending;   // disabled fields are not submitted
+                choices.classList.remove('invalid');
+                clearError();
+            });
+        });
+
+        // Guest stepper (1-5)
+        form.querySelectorAll('.step-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const next = (parseInt(guestInput.value, 10) || 1) + Number(btn.dataset.step);
+                guestInput.value = Math.min(5, Math.max(1, next));
+            });
+        });
+
+        nameInput.addEventListener('input', () => nameInput.closest('.rsvp-field').classList.remove('invalid'));
+
+        form.addEventListener('submit', async function (e) {
+            e.preventDefault();
+            clearError();
+
+            // Validation with friendly messages
+            const name = nameInput.value.trim();
+            const picked = form.querySelector('input[name="attendance"]:checked');
+            if (!name) {
+                nameInput.closest('.rsvp-field').classList.add('invalid');
+                showError('Please enter your full name.');
+                nameInput.focus();
+                return;
+            }
+            if (!picked) {
+                choices.classList.add('invalid');
+                showError('Please let us know if you can make it.');
+                return;
+            }
+
+            submitBtn.classList.add('loading');
+            submitBtn.disabled = true;
+            submitBtn.querySelector('.btn-label').textContent = 'Sending...';
+
+            try {
+                // SAMPLE MODE: no data is sent anywhere. For a live site, replace this block with:
+                //   const response = await fetch(form.action, { method: 'POST', body: new FormData(form), headers: { 'Accept': 'application/json' } });
+                //   if (!response.ok) throw new Error('Request failed');
+                await new Promise(resolve => setTimeout(resolve, 700));
+
+                const attending = picked.value === 'Joyfully Accepts';
+                const firstName = name.split(' ')[0];
+                document.getElementById('successTitle').textContent = `Thank you, ${firstName}!`;
+                document.getElementById('successText').textContent = attending
+                    ? 'Your RSVP is in. We can\'t wait to celebrate with you!'
+                    : 'Your response is received. You\'ll be missed, and we\'re grateful you let us know.';
+                form.hidden = true;
+                form.style.display = 'none';
+                successBox.hidden = false;
+                successBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            } catch (err) {
+                showError('Your RSVP didn\'t go through. Check your connection and try again.');
+                submitBtn.classList.remove('loading');
+                submitBtn.disabled = false;
+                submitBtn.querySelector('.btn-label').textContent = 'Send my RSVP';
+            }
+        });
+    }
+
+    // 3. Mobile hamburger menu (RSVP stays visible outside the menu)
+    const navToggle = document.getElementById('navToggle');
+    const navMenu = document.getElementById('navMenu');
+
+    if (navToggle && navMenu) {
+        const setMenu = (open) => {
+            navToggle.classList.toggle('active', open);
+            navMenu.classList.toggle('active', open);
+            navToggle.setAttribute('aria-expanded', String(open));
+            navToggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+        };
+
+        navToggle.addEventListener('click', () => setMenu(!navMenu.classList.contains('active')));
+        navMenu.querySelectorAll('a').forEach(link => link.addEventListener('click', () => setMenu(false)));
+        document.querySelector('.navbar .rsvp-btn')?.addEventListener('click', () => setMenu(false));
+        document.addEventListener('click', (e) => { if (!e.target.closest('.navbar')) setMenu(false); });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') setMenu(false); });
+    }
+
+    // 4. Gallery carousel (3D coverflow, responsive)
+    if (document.querySelector('.gallery-slider') && typeof Swiper !== 'undefined') {
+        new Swiper('.gallery-slider', {
+            effect: 'coverflow',
+            grabCursor: true,
+            centeredSlides: true,
+            slidesPerView: 'auto',
+            loop: true,
+            speed: 700,
+            autoplay: { delay: 3500, disableOnInteraction: false, pauseOnMouseEnter: true },
+            coverflowEffect: { rotate: 20, stretch: 0, depth: 120, modifier: 1, scale: 0.92, slideShadows: false },
+            breakpoints: {
+                700: { coverflowEffect: { rotate: 28, stretch: 0, depth: 140, modifier: 1, scale: 0.9, slideShadows: false } }
+            },
+            keyboard: { enabled: true },
+            pagination: { el: '.gallery-slider .swiper-pagination', clickable: true },
+            navigation: { nextEl: '.gallery-slider .swiper-button-next', prevEl: '.gallery-slider .swiper-button-prev' },
+        });
+    }
+});
+
+// 5. Audio Toggle Functionality (Global)
+function toggleMusic() {
+    const music = document.getElementById("bg-music");
+    const btn = document.getElementById("music-btn");
+    
+    if (music && music.paused) {
+        music.play().then(() => {
+            if (btn) btn.innerText = "⏸ Pause Music";
+        }).catch(error => {
+            console.log("Autoplay failed:", error);
+        });
+    } else if (music) {
+        music.pause();
+        if (btn) btn.innerText = "🎵 Play Music";
+    }
+}
+
+// Table Guest List Data
+const tableData = {
+    1: {
+        title: "Immediate Family",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6"]
+    },
+    2: {
+        title: "Principal Sponsors",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    },
+    3: {
+        title: "Groom's Uncles & Aunts",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6"]
+    },
+    4: {
+        title: "Bride's Uncles & Aunts",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    },
+    5: {
+        title: "Bride's Family",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    },
+    6: {
+        title: "Groom's Family & Friends",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    },
+    7: {
+        title: "Groom's Family",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    },
+    8: {
+        title: "Groom's Friends",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8", "Guest Name 9", "Guest Name 10"]
+    },
+    9: {
+        title: "Bride's Family & Friends",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    },
+    10: {
+        title: "Bride's Friends",
+        guests: ["Guest Name 1", "Guest Name 2", "Guest Name 3", "Guest Name 4", "Guest Name 5", "Guest Name 6", "Guest Name 7", "Guest Name 8"]
+    }
+};
+
+function openTableModal(tableNum) {
+    const data = tableData[tableNum];
+    if (!data) return;
+
+    document.getElementById("modalTableNumber").innerText = `TABLE ${String(tableNum).padStart(2, '0')}`;
+    document.getElementById("modalTableName").innerText = data.title;
+
+    const listContainer = document.getElementById("modalGuestList");
+    listContainer.innerHTML = "";
+
+    data.guests.forEach((guest, index) => {
+        const li = document.createElement("li");
+        li.innerText = guest;
+        // Stagger list animation delay for each guest name
+        li.style.transitionDelay = `${0.1 + index * 0.04}s`;
+        listContainer.appendChild(li);
+    });
+
+    document.getElementById("tableModal").classList.add("active");
+}
+
+function closeTableModal(event) {
+    if (event.target.id === "tableModal") {
+        document.getElementById("tableModal").classList.remove("active");
+    }
+}
+
+function closeTableModalDirect() {
+    document.getElementById("tableModal").classList.remove("active");
+}
+
+// Photo viewer for the first-wedding collage
+document.addEventListener('DOMContentLoaded', function () {
+    const grid = document.querySelector('.moments-grid');
+    const box = document.getElementById('lightbox');
+    if (!grid || !box) return;
+
+    const imgs = Array.from(grid.querySelectorAll('img'));
+    const bigImg = box.querySelector('.lb-img');
+    const counter = box.querySelector('.lb-count');
+    let current = 0;
+    let lastFocus = null;
+
+    function show(i) {
+        current = (i + imgs.length) % imgs.length;
+        bigImg.src = imgs[current].currentSrc || imgs[current].src;
+        bigImg.alt = imgs[current].alt;
+        counter.textContent = (current + 1) + ' / ' + imgs.length;
+    }
+    function open(i) {
+        lastFocus = document.activeElement;
+        show(i);
+        box.classList.add('open');
+        box.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+        box.querySelector('.lb-close').focus();
+    }
+    function close() {
+        box.classList.remove('open');
+        box.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        if (lastFocus) lastFocus.focus();
+    }
+
+    imgs.forEach((img, i) => img.closest('button').addEventListener('click', () => open(i)));
+    box.querySelector('.lb-close').addEventListener('click', close);
+    box.querySelector('.lb-prev').addEventListener('click', () => show(current - 1));
+    box.querySelector('.lb-next').addEventListener('click', () => show(current + 1));
+    box.addEventListener('click', (e) => {
+        if (e.target === box || e.target.classList.contains('lb-stage')) close();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (!box.classList.contains('open')) return;
+        if (e.key === 'Escape') close();
+        if (e.key === 'ArrowLeft') show(current - 1);
+        if (e.key === 'ArrowRight') show(current + 1);
+    });
+
+    // Swipe left/right on phones
+    let startX = null;
+    box.addEventListener('touchstart', (e) => { startX = e.touches[0].clientX; }, { passive: true });
+    box.addEventListener('touchend', (e) => {
+        if (startX === null) return;
+        const dx = e.changedTouches[0].clientX - startX;
+        if (Math.abs(dx) > 50) show(current + (dx < 0 ? 1 : -1));
+        startX = null;
+    });
+});
